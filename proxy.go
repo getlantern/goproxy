@@ -2,6 +2,7 @@ package goproxy
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"log"
 	"net"
@@ -19,16 +20,17 @@ type ProxyHttpServer struct {
 	// KeepDestinationHeaders indicates the proxy should retain any headers present in the http.Response before proxying
 	KeepDestinationHeaders bool
 	// setting Verbose to true will log information on each request sent to the proxy
-	Verbose         bool
-	Logger          Logger
-	NonproxyHandler http.Handler
-	reqHandlers     []ReqHandler
-	respHandlers    []RespHandler
-	httpsHandlers   []HttpsHandler
-	Tr              *http.Transport
+	Verbose              bool
+	Logger               Logger
+	NonproxyHandler      http.Handler
+	CustomConnectHandler http.Handler
+	reqHandlers          []ReqHandler
+	respHandlers         []RespHandler
+	httpsHandlers        []HttpsHandler
+	Tr                   *http.Transport
 	// ConnectDial will be used to create TCP connections for CONNECT requests
 	// if nil Tr.Dial will be used
-	ConnectDial func(network string, addr string) (net.Conn, error)
+	ConnectDial func(ctx context.Context, network string, addr string) (net.Conn, error)
 	CertStore   CertStorage
 	KeepHeader  bool
 }
@@ -112,6 +114,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	//r.Header["X-Forwarded-For"] = w.RemoteAddr()
 	if r.Method == "CONNECT" {
 		proxy.handleHttps(w, r)
+		// proxy.CustomConnectHandler.ServeHTTP(w, r)
 	} else {
 		ctx := &ProxyCtx{Req: r, Session: atomic.AddInt64(&proxy.sess, 1), Proxy: proxy}
 
