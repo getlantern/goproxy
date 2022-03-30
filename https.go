@@ -346,10 +346,10 @@ func dialerFromEnv(proxy *ProxyHttpServer) func(ctx context.Context, network, ad
 }
 
 func (proxy *ProxyHttpServer) NewConnectDialToProxy(https_proxy string) func(ctx context.Context, network, addr string) (net.Conn, error) {
-	return proxy.NewConnectDialToProxyWithHandler(context.Background(), https_proxy, nil)
+	return proxy.NewConnectDialToProxyWithHandler(https_proxy, nil)
 }
 
-func (proxy *ProxyHttpServer) NewConnectDialToProxyWithHandler(ctx context.Context, https_proxy string, connectReqHandler func(req *http.Request)) func(retCtx context.Context, network, addr string) (net.Conn, error) {
+func (proxy *ProxyHttpServer) NewConnectDialToProxyWithHandler(https_proxy string, connectReqHandler func(req *http.Request)) func(retCtx context.Context, network, addr string) (net.Conn, error) {
 	u, err := url.Parse(https_proxy)
 	if err != nil {
 		return nil
