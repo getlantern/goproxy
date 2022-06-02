@@ -33,6 +33,11 @@ type ProxyHttpServer struct {
 	ConnectDial func(ctx context.Context, network string, addr string) (net.Conn, error)
 	CertStore   CertStorage
 	KeepHeader  bool
+	// All errors during reading and writing to different net.Conn objects
+	// (almost exclusively used during HTTP CONNECT requests) will be piped
+	// here, if this is not nil. Else, errors will be logged with a warning
+	// level
+	ReadWriteErrChan chan error
 }
 
 var hasPort = regexp.MustCompile(`:\d+$`)
@@ -111,7 +116,7 @@ func removeProxyHeaders(ctx *ProxyCtx, r *http.Request) {
 
 // Standard net/http function. Shouldn't be used directly, http.Serve will use it.
 func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	//r.Header["X-Forwarded-For"] = w.RemoteAddr()
+	// r.Header["X-Forwarded-For"] = []string{r.RemoteAddr}
 	if r.Method == "CONNECT" {
 		proxy.handleHttps(w, r)
 		// proxy.CustomConnectHandler.ServeHTTP(w, r)
