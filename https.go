@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -23,6 +24,7 @@ type ConnectActionLiteral int
 const (
 	ConnectAccept = iota
 	ConnectReject
+	ConnectError
 	ConnectMitm
 	ConnectHijack
 	ConnectHTTPMitm
@@ -34,6 +36,7 @@ var (
 	MitmConnect     = &ConnectAction{Action: ConnectMitm, TLSConfig: TLSConfigFromCA(&GoproxyCa)}
 	HTTPMitmConnect = &ConnectAction{Action: ConnectHTTPMitm, TLSConfig: TLSConfigFromCA(&GoproxyCa)}
 	RejectConnect   = &ConnectAction{Action: ConnectReject, TLSConfig: TLSConfigFromCA(&GoproxyCa)}
+	ErrorConnect    = &ConnectAction{Action: ConnectError, TLSConfig: TLSConfigFromCA(&GoproxyCa)}
 	httpsRegexp     = regexp.MustCompile(`^https:\/\/`)
 )
 
@@ -306,6 +309,8 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 			}
 		}
 		proxyClient.Close()
+	case ConnectError:
+		httpError(proxyClient, ctx, fmt.Errorf(host))
 	}
 }
 
