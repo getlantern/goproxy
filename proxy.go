@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 )
 
+const GoproxyNoMetricsHeader = "Goproxy-No-Metrics"
+
 // The basic proxy type. Implements http.Handler.
 type ProxyHttpServer struct {
 	// session variable must be aligned in i386

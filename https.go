@@ -134,6 +134,17 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 		ctx.Logf("Accepting CONNECT to %s", host)
 		proxyClient.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 
+		var bytesReadCallback, bytesWrittenCallback func(string, int64)
+		// Respect the no-metrics header
+		if r.Header.Get(GoproxyNoMetricsHeader) == "1" {
+			bytesReadCallback = nil
+			bytesWrittenCallback = nil
+		} else {
+			bytesReadCallback = proxy.BytesReadCallback
+			bytesWrittenCallback = proxy.BytesWrittenCallback
+		}
+		r.Header.Del(GoproxyNoMetricsHeader)
+
 		targetTCP, targetOK := targetSiteCon.(halfClosable)
 		proxyClientTCP, clientOK := proxyClient.(halfClosable)
 		if targetOK && clientOK {
