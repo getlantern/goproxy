@@ -2,7 +2,6 @@ package goproxy
 
 import (
 	"bufio"
-	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -81,11 +80,13 @@ func (proxy *ProxyHttpServer) dial(network, addr string) (c net.Conn, err error)
 	return net.Dial(network, addr)
 }
 
-func (proxy *ProxyHttpServer) connectDial(ctx context.Context, network, addr string) (c net.Conn, err error) {
+func (proxy *ProxyHttpServer) connectDial(
+	originalConnectReq *http.Request,
+	network, addr string) (c net.Conn, err error) {
 	if proxy.ConnectDial == nil {
 		return proxy.dial(network, addr)
 	}
-	return proxy.ConnectDial(ctx, network, addr)
+	return proxy.ConnectDial(originalConnectReq, network, addr)
 }
 
 type halfClosable interface {
@@ -126,7 +127,7 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 		if !hasPort.MatchString(host) {
 			host += ":80"
 		}
-		targetSiteCon, err := proxy.connectDial(ctx.Req.Context(), "tcp", host)
+		targetSiteCon, err := proxy.connectDial(ctx.Req, "tcp", host)
 		if err != nil {
 			httpError(proxyClient, ctx, err)
 			return
@@ -186,7 +187,7 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 	case ConnectHTTPMitm:
 		proxyClient.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 		ctx.Logf("Assuming CONNECT is plain HTTP tunneling, mitm proxying it")
-		targetSiteCon, err := proxy.connectDial(ctx.Req.Context(), "tcp", host)
+		targetSiteCon, err := proxy.connectDial(ctx.Req, "tcp", host)
 		if err != nil {
 			ctx.Warnf("Error dialing to %s: %s", host, err.Error())
 			return
@@ -415,7 +416,9 @@ func copyAndClose(
 	src.CloseRead()
 }
 
-func dialerFromEnv(proxy *ProxyHttpServer) func(ctx context.Context, network, addr string) (net.Conn, error) {
+func dialerFromEnv(proxy *ProxyHttpServer) func(
+	originalConnectReq *http.Request,
+	network, addr string) (net.Conn, error) {
 	https_proxy := os.Getenv("HTTPS_PROXY")
 	if https_proxy == "" {
 		https_proxy = os.Getenv("https_proxy")
@@ -426,11 +429,16 @@ func dialerFromEnv(proxy *ProxyHttpServer) func(ctx context.Context, network, ad
 	return proxy.NewConnectDialToProxy(https_proxy)
 }
 
-func (proxy *ProxyHttpServer) NewConnectDialToProxy(https_proxy string) func(ctx context.Context, network, addr string) (net.Conn, error) {
+func (proxy *ProxyHttpServer) NewConnectDialToProxy(https_proxy string) func(
+	originalConnectReq *http.Request,
+	network, addr string) (net.Conn, error) {
 	return proxy.NewConnectDialToProxyWithHandler(https_proxy, nil)
 }
 
-func (proxy *ProxyHttpServer) NewConnectDialToProxyWithHandler(https_proxy string, connectReqHandler func(req *http.Request)) func(retCtx context.Context, network, addr string) (net.Conn, error) {
+func (proxy *ProxyHttpServer) NewConnectDialToProxyWithHandler(
+	https_proxy string,
+	connectReqHandler func(originalConnectReq, newConnectReq *http.Request),
+) func(originalConnectReq *http.Request, network, addr string) (net.Conn, error) {
 	u, err := url.Parse(https_proxy)
 	if err != nil {
 		return nil
@@ -439,26 +447,26 @@ func (proxy *ProxyHttpServer) NewConnectDialToProxyWithHandler(https_proxy strin
 		if strings.IndexRune(u.Host, ':') == -1 {
 			u.Host += ":80"
 		}
-		return func(ctx context.Context, network, addr string) (net.Conn, error) {
-			connectReq := &http.Request{
+		return func(originalConnectReq *http.Request, network, addr string) (net.Conn, error) {
+			newConnectReq := &http.Request{
 				Method: "CONNECT",
 				URL:    &url.URL{Opaque: addr},
 				Host:   addr,
 				Header: make(http.Header),
 			}
 			if connectReqHandler != nil {
-				connectReqHandler(connectReq)
+				connectReqHandler(originalConnectReq, newConnectReq)
 			}
 			c, err := proxy.dial(network, u.Host)
 			if err != nil {
 				return nil, err
 			}
-			connectReq.Write(c)
+			newConnectReq.Write(c)
 			// Read response.
 			// Okay to use and discard buffered reader here, because
 			// TLS server will not speak until spoken to.
 			br := bufio.NewReader(c)
-			resp, err := http.ReadResponse(br, connectReq)
+			resp, err := http.ReadResponse(br, newConnectReq)
 			if err != nil {
 				c.Close()
 				return nil, err
@@ -479,27 +487,27 @@ func (proxy *ProxyHttpServer) NewConnectDialToProxyWithHandler(https_proxy strin
 		if strings.IndexRune(u.Host, ':') == -1 {
 			u.Host += ":443"
 		}
-		return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return func(originalConnectReq *http.Request, network, addr string) (net.Conn, error) {
 			c, err := proxy.dial(network, u.Host)
 			if err != nil {
 				return nil, err
 			}
 			c = tls.Client(c, proxy.Tr.TLSClientConfig)
-			connectReq := &http.Request{
+			newConnectReq := &http.Request{
 				Method: "CONNECT",
 				URL:    &url.URL{Opaque: addr},
 				Host:   addr,
 				Header: make(http.Header),
 			}
 			if connectReqHandler != nil {
-				connectReqHandler(connectReq)
+				connectReqHandler(originalConnectReq, newConnectReq)
 			}
-			connectReq.Write(c)
+			newConnectReq.Write(c)
 			// Read response.
 			// Okay to use and discard buffered reader here, because
 			// TLS server will not speak until spoken to.
 			br := bufio.NewReader(c)
-			resp, err := http.ReadResponse(br, connectReq)
+			resp, err := http.ReadResponse(br, newConnectReq)
 			if err != nil {
 				c.Close()
 				return nil, err

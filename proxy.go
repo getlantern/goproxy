@@ -2,7 +2,6 @@ package goproxy
 
 import (
 	"bufio"
-	"context"
 	"io"
 	"log"
 	"net"
@@ -16,6 +15,9 @@ const GoproxyNoMetricsHeader = "Goproxy-No-Metrics"
 
 // The basic proxy type. Implements http.Handler.
 type ProxyHttpServer struct {
+	// An identifier used to identify the proxy. Can be empty, but helpful in
+	// debugging sessions
+	ID string
 	// session variable must be aligned in i386
 	// see http://golang.org/src/pkg/sync/atomic/doc.go#L41
 	sess int64
@@ -35,9 +37,11 @@ type ProxyHttpServer struct {
 	Tr                   *http.Transport
 	// ConnectDial will be used to create TCP connections for CONNECT requests
 	// if nil Tr.Dial will be used
-	ConnectDial func(ctx context.Context, network string, addr string) (net.Conn, error)
-	CertStore   CertStorage
-	KeepHeader  bool
+	ConnectDial func(
+		originalConnectReq *http.Request,
+		network string, addr string) (net.Conn, error)
+	CertStore  CertStorage
+	KeepHeader bool
 	// All errors during reading and writing to different net.Conn objects
 	// (almost exclusively used during HTTP CONNECT requests) will be piped
 	// here, if this is not nil. Else, errors will be logged with a warning
